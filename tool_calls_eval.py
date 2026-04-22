@@ -631,12 +631,13 @@ class ToolCallsValidator:
             logger.warning(f"Unexpected error during validation: {e}")
             return False
 
-    async def validate_file(self, file_path: str) -> None:
+    async def validate_file(self, file_path: str, num_requests: int = 0) -> None:
         """
         Validate all requests from test file.
 
         Args:
             file_path: Test set file path (JSONL format)
+            num_requests: If > 0 and < total requests, only use the first N requests
         """
         self.eval_start_ts = time.time()
         self.eval_end_ts = None
@@ -648,6 +649,11 @@ class ToolCallsValidator:
         if not all_requests:
             logger.warning("Test set is empty, no requests to process")
             return
+
+        # Optionally limit the number of requests
+        if num_requests > 0 and num_requests < len(all_requests):
+            logger.info(f"Limiting to first {num_requests} of {len(all_requests)} requests")
+            all_requests = all_requests[:num_requests]
 
         existing_hash_map = {}
 
@@ -967,6 +973,13 @@ async def main() -> None:
     )
 
     parser.add_argument(
+        "--num-requests",
+        type=int,
+        default=0,
+        help="Number of requests to load (0 = all). If > 0 and < total, use the first N requests only.",
+    )
+
+    parser.add_argument(
         "--incremental",
         action="store_true",
         help="Incremental mode: only rerun failed or new requests, preserve successful results",
@@ -1010,7 +1023,7 @@ async def main() -> None:
         temperature=args.temperature,
         max_tokens=args.max_tokens,
     ) as validator:
-        await validator.validate_file(args.file_path)
+        await validator.validate_file(args.file_path, num_requests=args.num_requests)
 
 
 if __name__ == "__main__":
