@@ -154,6 +154,7 @@ class ToolCallsValidator:
         tokenizer_model: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
     ):
         """
         Initialize validator.
@@ -173,6 +174,7 @@ class ToolCallsValidator:
             tokenizer_model: Tokenizer model name for raw completions
             temperature: Generation temperature
             max_tokens: Maximum token count
+            extra_headers: Extra HTTP headers to set on the OpenAI client
         """
         # Validate parameters
         if not model or not model.strip():
@@ -203,6 +205,7 @@ class ToolCallsValidator:
         self.incremental = incremental
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.extra_headers = extra_headers or {}
         self.use_raw_completions = use_raw_completions
         self.tokenizer_model = tokenizer_model
 
@@ -220,15 +223,18 @@ class ToolCallsValidator:
                 max_keepalive_connections=concurrency,
             ),
         )
-        self.client = AsyncOpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url,
-            timeout=self.timeout,
-            max_retries=self.max_retries,
-            http_client=self.http_client,
-        )
+        client_kwargs = {
+            "api_key": self.api_key,
+            "base_url": self.base_url,
+            "timeout": self.timeout,
+            "max_retries": self.max_retries,
+            "http_client": self.http_client,
+        }
+        if self.extra_headers:
+            client_kwargs["default_headers"] = self.extra_headers
+        self.client = AsyncOpenAI(**client_kwargs)
 
-        # Async locks
+        # Async locksq
         self.file_lock = asyncio.Lock()
         self.stats_lock = asyncio.Lock()
 
@@ -915,6 +921,13 @@ async def main() -> None:
     )
 
     parser.add_argument(
+        "--extra-headers",
+        type=str,
+        default=None,
+        help='Extra HTTP headers as a JSON object, e.g. \'{"X-Session-ID":"UUID"}\'.',
+    )
+
+    parser.add_argument(
         "--model",
         required=True,
         help="Model name, e.g., kimi-k2-0905-preview",
@@ -1007,6 +1020,20 @@ async def main() -> None:
             logger.error(f"Failed to parse --extra-body JSON: {e}")
             return
 
+    extra_headers = {}
+    if args.extra_headers:
+        try:
+            extra_headers = json.loads(args.extra_headers)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse --extra-headers JSON: {e}")
+            return
+        if not isinstance(extra_headers, dict) or not all(
+            isinstance(k, str) and isinstance(v, str)
+            for k, v in extra_headers.items()
+        ):
+            logger.error("--extra-headers must be a JSON object with string keys and string values")
+            return
+
     async with ToolCallsValidator(
         model=args.model,
         base_url=args.base_url,
@@ -1022,6 +1049,7 @@ async def main() -> None:
         tokenizer_model=args.tokenizer_model,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
+        extra_headers=extra_headers,
     ) as validator:
         await validator.validate_file(args.file_path, num_requests=args.num_requests)
 
