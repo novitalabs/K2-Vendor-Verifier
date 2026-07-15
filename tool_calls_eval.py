@@ -1033,6 +1033,8 @@ async def main() -> None:
         ):
             logger.error("--extra-headers must be a JSON object with string keys and string values")
             return
+        if "X_FUSION_PROVIDER" in extra_headers and "X-Fusion-Provider" not in extra_headers:
+            extra_headers["X-Fusion-Provider"] = extra_headers.pop("X_FUSION_PROVIDER")
 
     async with ToolCallsValidator(
         model=args.model,
