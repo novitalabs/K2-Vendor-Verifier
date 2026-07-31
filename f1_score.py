@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 from typing import Dict
 
@@ -42,7 +43,7 @@ def is_tool_calls(finish_reason: str) -> bool:
     return finish_reason == "tool_calls"
 
 
-def compute_f1(gt_path: str, test_path: str) -> None:
+def compute_f1(gt_path: str, test_path: str) -> float:
     gt = load_finish_reasons(gt_path)
     test = load_finish_reasons(test_path)
 
@@ -81,13 +82,36 @@ def compute_f1(gt_path: str, test_path: str) -> None:
     print(f"Recall:    {recall:.4f} ({recall * 100:.2f}%)")
     print(f"F1:        {f1:.4f} ({f1 * 100:.2f}%)")
 
+    return f1
+
+
+def write_f1_to_summary(test_path: str, f1: float) -> None:
+    """Persist f1 into summary.json next to the test results file, under the
+    top-level key ``f1_score`` (creates the file if it does not exist)."""
+    summary_path = os.path.join(os.path.dirname(test_path), "summary.json")
+    summary: Dict = {}
+    if os.path.exists(summary_path):
+        try:
+            with open(summary_path, "r", encoding="utf-8") as f:
+                summary = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"Warning: could not read {summary_path} ({e}); recreating it.", file=sys.stderr)
+            summary = {}
+    if not isinstance(summary, dict):
+        summary = {}
+    summary["f1_score"] = f1
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+    print(f"f1_score written to: {summary_path}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Compute tool_call_f1 (ToolCall-Trigger Similarity)")
     parser.add_argument("ground_truth", help="Path to ground-truth results JSONL")
     parser.add_argument("test_results", help="Path to test results JSONL")
     args = parser.parse_args()
-    compute_f1(args.ground_truth, args.test_results)
+    f1 = compute_f1(args.ground_truth, args.test_results)
+    write_f1_to_summary(args.test_results, f1)
 
 
 if __name__ == "__main__":
